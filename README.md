@@ -18,6 +18,7 @@ A lightweight, flexible [PSR-3](https://www.php-fig.org/psr/psr-3/) compliant lo
 - ✅ **Configurable Backends** - Contract-based backend system for flexible log destinations
 - ✅ **Multiple Backends** - Send logs to multiple destinations simultaneously
 - ✅ **First-Party Backends** - Built-in support for stdout, stderr, files, and daily rotating files
+- ✅ **First-Party Formatters** - Built-in SimpleLogEntryFormatter and JsonLogEntryFormatter
 - ✅ **Message Interpolation** - Automatic placeholder replacement with context data
 - ✅ **Exception Handling** - Automatic exception information in log entries
 - ✅ **All Log Levels** - Supports all 8 PSR-3 log levels
@@ -49,6 +50,14 @@ $logger->error('Failed to connect to database');
 
 // Use context for message interpolation
 $logger->info('User {username} logged in from {ip}', [
+    'username' => 'john',
+    'ip' => '192.168.1.1',
+]);
+
+// For structured logging (JSON format)
+use Drishti\JsonLogEntryFormatter;
+$jsonLogger = new Logger(new FileBackend('/var/log/app.json', new JsonLogEntryFormatter()));
+$jsonLogger->info('User {username} logged in from {ip}', [
     'username' => 'john',
     'ip' => '192.168.1.1',
 ]);
@@ -229,10 +238,17 @@ $logger->info('This goes to STDOUT');
 $logger = new Logger(StdioBackend::stderr());
 $logger->error('This goes to STDERR');
 
+// With custom formatter
+use Drishti\JsonLogEntryFormatter;
+$formatter = new JsonLogEntryFormatter();
+$logger = new Logger(StdioBackend::stdout($formatter));
+
 // With custom clock (for testing or timezone control)
 use Psr\Clock\ClockInterface;
-$clock = new MyCustomClock();
-$logger = new Logger(StdioBackend::stdout(null, $clock));
+use Samay\FrozenClock;
+$clock = new FrozenClock(new \DateTimeImmutable('2024-01-15 10:00:00'));
+$formatter = new JsonLogEntryFormatter($clock);
+$logger = new Logger(StdioBackend::stdout($formatter));
 ```
 
 ##### FileBackend
@@ -325,7 +341,63 @@ $logger = new Logger([
 $logger->info('This message goes to all three backends');
 ```
 
-### Custom Formatters
+### Formatters
+
+Drishti includes two first-party formatters and supports custom formatters.
+
+#### SimpleLogEntryFormatter (Default)
+
+The default formatter produces human-readable log entries:
+
+```php
+use Drishti\Logger;
+use Drishti\FileBackend;
+use Drishti\SimpleLogEntryFormatter;
+
+// SimpleLogEntryFormatter is used by default
+$logger = new Logger(new FileBackend('/var/log/app.log'));
+
+// Or explicitly specify it
+$formatter = new SimpleLogEntryFormatter();
+$logger = new Logger(new FileBackend('/var/log/app.log', $formatter));
+```
+
+Output format: `[2024-01-15 10:30:45] INFO: User logged in`
+
+#### JsonLogEntryFormatter
+
+For structured logging, use the JSON formatter:
+
+```php
+use Drishti\Logger;
+use Drishti\FileBackend;
+use Drishti\JsonLogEntryFormatter;
+
+$formatter = new JsonLogEntryFormatter();
+$logger = new Logger(new FileBackend('/var/log/app.json', $formatter));
+$logger->info('User {username} logged in', ['username' => 'john', 'ip' => '192.168.1.1']);
+```
+
+Output format:
+
+```json
+{
+    "timestamp": "2024-01-15T10:30:45+00:00",
+    "level": "INFO",
+    "message": "User john logged in",
+    "context": { "username": "john", "ip": "192.168.1.1" }
+}
+```
+
+The JSON formatter includes:
+
+- ISO 8601 timestamp
+- Uppercased log level
+- Interpolated message
+- Exception details (if present)
+- Remaining context data
+
+#### Custom Formatters
 
 You can create custom formatters by implementing `LogEntryFormatterInterface`:
 
@@ -333,7 +405,7 @@ You can create custom formatters by implementing `LogEntryFormatterInterface`:
 use Drishti\LogEntryFormatterInterface;
 use Psr\Clock\ClockInterface;
 
-class JsonFormatter implements LogEntryFormatterInterface
+class CustomFormatter implements LogEntryFormatterInterface
 {
     public function __construct(
         private readonly ?ClockInterface $clock = null
@@ -347,25 +419,14 @@ class JsonFormatter implements LogEntryFormatterInterface
 
     public function format(string $level, string $message, array $context): string
     {
-        // Interpolate message (simplified - SimpleLogEntryFormatter has full implementation)
-        $interpolated = $message;
-        foreach ($context as $key => $value) {
-            if ($key !== 'exception') {
-                $interpolated = str_replace("{{$key}}", (string)$value, $interpolated);
-            }
-        }
-
-        return json_encode([
-            'timestamp' => $this->clock->now()->format('c'),
-            'level' => strtoupper($level),
-            'message' => $interpolated,
-            'context' => $context,
-        ]) . PHP_EOL;
+        // Your custom formatting logic
+        // Interpolate message, handle exceptions, format output
+        return $formatted;
     }
 }
 
 // Use custom formatter with any backend
-$formatter = new JsonFormatter();
+$formatter = new CustomFormatter();
 $logger = new Logger(new FileBackend('/var/log/app.log', $formatter));
 ```
 
