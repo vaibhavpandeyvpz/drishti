@@ -11,6 +11,8 @@
 
 namespace Drishti;
 
+use Psr\Clock\ClockInterface;
+
 /**
  * Backend implementation for writing logs to standard I/O streams.
  *
@@ -41,39 +43,42 @@ final class StdioBackend implements BackendInterface
      *
      * @param  resource  $stream  The stream resource to write to (STDOUT or STDERR)
      * @param  LogEntryFormatterInterface|null  $formatter  Optional formatter (defaults to SimpleLogEntryFormatter)
+     * @param  ClockInterface|null  $clock  Optional clock instance (defaults to system clock)
      *
      * @throws \InvalidArgumentException If the stream is not a valid resource
      */
-    private function __construct($stream, ?LogEntryFormatterInterface $formatter = null)
+    private function __construct($stream, ?LogEntryFormatterInterface $formatter = null, ?ClockInterface $clock = null)
     {
         if (! \is_resource($stream)) {
             throw new \InvalidArgumentException('Stream must be a valid resource');
         }
 
         $this->stream = $stream;
-        $this->formatter = $formatter ?? new SimpleLogEntryFormatter;
+        $this->formatter = $formatter ?? new SimpleLogEntryFormatter($clock);
     }
 
     /**
      * Creates a backend that writes to standard output (STDOUT).
      *
      * @param  LogEntryFormatterInterface|null  $formatter  Optional formatter (defaults to SimpleLogEntryFormatter)
+     * @param  ClockInterface|null  $clock  Optional clock instance (defaults to system clock)
      * @return static A new StdioBackend instance for STDOUT
      */
-    public static function stdout(?LogEntryFormatterInterface $formatter = null): static
+    public static function stdout(?LogEntryFormatterInterface $formatter = null, ?ClockInterface $clock = null): static
     {
-        return new self(\STDOUT, $formatter);
+        return new self(\STDOUT, $formatter, $clock);
     }
 
     /**
      * Creates a backend that writes to standard error (STDERR).
      *
      * @param  LogEntryFormatterInterface|null  $formatter  Optional formatter (defaults to SimpleLogEntryFormatter)
+     * @param  ClockInterface|null  $clock  Optional clock instance (defaults to system clock)
      * @return static A new StdioBackend instance for STDERR
      */
-    public static function stderr(?LogEntryFormatterInterface $formatter = null): static
+    public static function stderr(?LogEntryFormatterInterface $formatter = null, ?ClockInterface $clock = null): static
     {
-        return new static(\STDERR, $formatter);
+        return new static(\STDERR, $formatter, $clock);
     }
 
     /**

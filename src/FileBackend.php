@@ -11,6 +11,8 @@
 
 namespace Drishti;
 
+use Psr\Clock\ClockInterface;
+
 /**
  * Backend implementation for writing logs to a single file.
  *
@@ -37,18 +39,19 @@ final class FileBackend implements BackendInterface
      *
      * @param  string  $filePath  The path to the log file
      * @param  LogEntryFormatterInterface|null  $formatter  Optional formatter (defaults to SimpleLogEntryFormatter)
+     * @param  ClockInterface|null  $clock  Optional clock instance (defaults to system clock)
      *
      * @throws \InvalidArgumentException If the file path is empty
      * @throws \RuntimeException If the directory cannot be created or file cannot be written
      */
-    public function __construct(string $filePath, ?LogEntryFormatterInterface $formatter = null)
+    public function __construct(string $filePath, ?LogEntryFormatterInterface $formatter = null, ?ClockInterface $clock = null)
     {
         if (empty(\trim($filePath))) {
             throw new \InvalidArgumentException('File path cannot be empty');
         }
 
         $this->filePath = $filePath;
-        $this->formatter = $formatter ?? new SimpleLogEntryFormatter;
+        $this->formatter = $formatter ?? new SimpleLogEntryFormatter($clock);
         $this->ensureDirectoryExists();
     }
 

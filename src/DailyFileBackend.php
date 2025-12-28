@@ -11,6 +11,8 @@
 
 namespace Drishti;
 
+use Psr\Clock\ClockInterface;
+
 /**
  * Backend implementation for writing logs to daily rotating files.
  *
@@ -34,6 +36,11 @@ final class DailyFileBackend implements BackendInterface
     private readonly LogEntryFormatterInterface $formatter;
 
     /**
+     * The clock instance for date-based file rotation.
+     */
+    private readonly ClockInterface $clock;
+
+    /**
      * The current date string (YYYY-MM-DD) for the active log file.
      */
     private ?string $currentDate = null;
@@ -50,18 +57,26 @@ final class DailyFileBackend implements BackendInterface
      *                            (YYYY-MM-DD) will be automatically appended.
      *                            Example: '/var/log/app' becomes '/var/log/app-2024-01-15.log'
      * @param  LogEntryFormatterInterface|null  $formatter  Optional formatter (defaults to SimpleLogEntryFormatter)
+     * @param  ClockInterface|null  $clock  Optional clock instance (defaults to system clock)
      *
      * @throws \InvalidArgumentException If the base path is empty
      * @throws \RuntimeException If the directory cannot be created
      */
-    public function __construct(string $basePath, ?LogEntryFormatterInterface $formatter = null)
+    public function __construct(string $basePath, ?LogEntryFormatterInterface $formatter = null, ?ClockInterface $clock = null)
     {
         if (empty(\trim($basePath))) {
             throw new \InvalidArgumentException('Base path cannot be empty');
         }
 
         $this->basePath = $basePath;
-        $this->formatter = $formatter ?? new SimpleLogEntryFormatter;
+        $this->clock = $clock ?? new class implements ClockInterface
+        {
+            public function now(): \DateTimeImmutable
+            {
+                return new \DateTimeImmutable;
+            }
+        };
+        $this->formatter = $formatter ?? new SimpleLogEntryFormatter($this->clock);
         $this->ensureDirectoryExists();
     }
 
@@ -76,7 +91,7 @@ final class DailyFileBackend implements BackendInterface
      */
     public function write(string $level, string $message, array $context): void
     {
-        $today = \date('Y-m-d');
+        $today = $this->clock->now()->format('Y-m-d');
 
         // Rotate to new file if date changed
         if ($this->currentDate !== $today) {

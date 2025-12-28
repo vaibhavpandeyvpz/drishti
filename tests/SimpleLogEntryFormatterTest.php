@@ -12,6 +12,7 @@
 namespace Drishti;
 
 use PHPUnit\Framework\TestCase;
+use Samay\FrozenClock;
 
 /**
  * Test suite for SimpleLogEntryFormatter class.
@@ -161,5 +162,40 @@ final class SimpleLogEntryFormatterTest extends TestCase
             '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] WARNING: Test message'.\preg_quote(\PHP_EOL, '/').'$/',
             $formatted
         );
+    }
+
+    /**
+     * Tests that the formatter uses the provided clock for timestamps.
+     */
+    public function test_uses_provided_clock(): void
+    {
+        $fixedTime = new \DateTimeImmutable('2024-01-15 14:30:45');
+        $clock = new FrozenClock($fixedTime);
+        $formatter = new SimpleLogEntryFormatter($clock);
+        $formatted = $formatter->format('info', 'Test message', []);
+
+        $this->assertStringContainsString('[2024-01-15 14:30:45]', $formatted);
+        $this->assertStringContainsString('INFO:', $formatted);
+        $this->assertStringContainsString('Test message', $formatted);
+    }
+
+    /**
+     * Tests that the formatter uses system clock when no clock is provided.
+     */
+    public function test_uses_system_clock_by_default(): void
+    {
+        $formatter = new SimpleLogEntryFormatter;
+        $before = new \DateTimeImmutable;
+        $formatted = $formatter->format('info', 'Test message', []);
+        $after = new \DateTimeImmutable;
+
+        // Extract timestamp from formatted string
+        \preg_match('/\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/', $formatted, $matches);
+        $this->assertNotEmpty($matches);
+        $timestamp = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $matches[1]);
+
+        // Timestamp should be between before and after
+        $this->assertGreaterThanOrEqual($before->getTimestamp(), $timestamp->getTimestamp());
+        $this->assertLessThanOrEqual($after->getTimestamp(), $timestamp->getTimestamp());
     }
 }

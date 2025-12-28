@@ -6,14 +6,15 @@
 [![License](https://img.shields.io/packagist/l/vaibhavpandeyvpz/drishti.svg?style=flat-square)](LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/vaibhavpandeyvpz/drishti/tests.yml?branch=master&style=flat-square)](https://github.com/vaibhavpandeyvpz/drishti/actions)
 
-A lightweight, flexible [PSR-3](https://www.php-fig.org/psr/psr-3/) compliant logging library with configurable backends and zero dependencies.
+A lightweight, flexible [PSR-3](https://www.php-fig.org/psr/psr-3/) compliant logging library with configurable backends, [PSR-20](https://www.php-fig.org/psr/psr-20/) Clock support, and minimal dependencies.
 
 > **Drishti** (`दृष्टि`) - Sanskrit for "Vision" or "Sight", representing the ability to see and record what happens in your application.
 
 ## Features
 
 - ✅ **PSR-3 Compliant** - Full implementation of the PSR-3 LoggerInterface specification
-- ✅ **Zero Dependencies** - Only requires PSR-3 interface (psr/log)
+- ✅ **PSR-20 Clock Support** - Uses PSR-20 ClockInterface for time operations (testable and flexible)
+- ✅ **Minimal Dependencies** - Only requires PSR-3 interface (psr/log) and PSR-20 Clock (psr/clock)
 - ✅ **Configurable Backends** - Contract-based backend system for flexible log destinations
 - ✅ **Multiple Backends** - Send logs to multiple destinations simultaneously
 - ✅ **First-Party Backends** - Built-in support for stdout, stderr, files, and daily rotating files
@@ -227,6 +228,11 @@ $logger->info('This goes to STDOUT');
 // Write to STDERR (useful for separating logs from application output)
 $logger = new Logger(StdioBackend::stderr());
 $logger->error('This goes to STDERR');
+
+// With custom clock (for testing or timezone control)
+use Psr\Clock\ClockInterface;
+$clock = new MyCustomClock();
+$logger = new Logger(StdioBackend::stdout(null, $clock));
 ```
 
 ##### FileBackend
@@ -239,6 +245,11 @@ use Drishti\FileBackend;
 
 $logger = new Logger(new FileBackend('/var/log/app.log'));
 $logger->info('This is written to the file');
+
+// With custom clock
+use Psr\Clock\ClockInterface;
+$clock = new MyCustomClock();
+$logger = new Logger(new FileBackend('/var/log/app.log', null, $clock));
 ```
 
 ##### DailyFileBackend
@@ -253,6 +264,11 @@ $logger = new Logger(new DailyFileBackend('/var/log/app'));
 // Creates files like: /var/log/app-2024-01-15.log
 // Automatically rotates to new file each day
 $logger->info('This goes to today\'s log file');
+
+// With custom clock (useful for testing date rotation)
+use Psr\Clock\ClockInterface;
+$clock = new MyCustomClock();
+$logger = new Logger(new DailyFileBackend('/var/log/app', null, $clock));
 ```
 
 #### Custom Backends
@@ -261,22 +277,33 @@ Create your own backend by implementing `BackendInterface`:
 
 ```php
 use Drishti\BackendInterface;
+use Drishti\LogEntryFormatterInterface;
 
 class DatabaseBackend implements BackendInterface
 {
+    public function __construct(
+        private readonly \PDO $database,
+        private readonly ?LogEntryFormatterInterface $formatter = null
+    ) {}
+
     public function write(string $level, string $message, array $context): void
     {
+        // Format the message using formatter (or your own logic)
+        $formatted = $this->formatter?->format($level, $message, $context)
+            ?? "[$level] $message";
+
         // Write to database, external service, etc.
-        $this->database->insert('logs', [
-            'level' => $level,
-            'message' => $message,
-            'context' => json_encode($context),
-            'created_at' => date('Y-m-d H:i:s'),
-        ]);
+        $this->database->prepare('INSERT INTO logs (level, message, context, created_at) VALUES (?, ?, ?, ?)')
+            ->execute([
+                $level,
+                $message,
+                json_encode($context),
+                (new \DateTimeImmutable)->format('Y-m-d H:i:s'),
+            ]);
     }
 }
 
-$logger = new Logger(new DatabaseBackend());
+$logger = new Logger(new DatabaseBackend($pdo));
 ```
 
 #### Multiple Backends
@@ -298,6 +325,70 @@ $logger = new Logger([
 $logger->info('This message goes to all three backends');
 ```
 
+### Custom Formatters
+
+You can create custom formatters by implementing `LogEntryFormatterInterface`:
+
+```php
+use Drishti\LogEntryFormatterInterface;
+use Psr\Clock\ClockInterface;
+
+class JsonFormatter implements LogEntryFormatterInterface
+{
+    public function __construct(
+        private readonly ?ClockInterface $clock = null
+    ) {
+        $this->clock = $clock ?? new class implements ClockInterface {
+            public function now(): \DateTimeImmutable {
+                return new \DateTimeImmutable;
+            }
+        };
+    }
+
+    public function format(string $level, string $message, array $context): string
+    {
+        // Interpolate message (simplified - SimpleLogEntryFormatter has full implementation)
+        $interpolated = $message;
+        foreach ($context as $key => $value) {
+            if ($key !== 'exception') {
+                $interpolated = str_replace("{{$key}}", (string)$value, $interpolated);
+            }
+        }
+
+        return json_encode([
+            'timestamp' => $this->clock->now()->format('c'),
+            'level' => strtoupper($level),
+            'message' => $interpolated,
+            'context' => $context,
+        ]) . PHP_EOL;
+    }
+}
+
+// Use custom formatter with any backend
+$formatter = new JsonFormatter();
+$logger = new Logger(new FileBackend('/var/log/app.log', $formatter));
+```
+
+### PSR-20 Clock Support
+
+Drishti uses [PSR-20 ClockInterface](https://www.php-fig.org/psr/psr-20/) for all time operations, making it testable and flexible. All backends and formatters accept an optional `ClockInterface` instance.
+
+For testing, you can use a frozen clock like [samay](https://github.com/vaibhavpandeyvpz/samay):
+
+```php
+use Drishti\Logger;
+use Drishti\FileBackend;
+use Samay\FrozenClock;
+
+// In tests, use a frozen clock for predictable timestamps
+$fixedTime = new \DateTimeImmutable('2024-01-15 10:30:45');
+$clock = new FrozenClock($fixedTime);
+$logger = new Logger(new FileBackend('/var/log/test.log', null, $clock));
+
+$logger->info('Test message');
+// Timestamp will always be 2024-01-15 10:30:45
+```
+
 ### Output Format
 
 All log entries include a timestamp in the format `[YYYY-MM-DD HH:MM:SS]`.
@@ -313,6 +404,13 @@ Example output:
 
 - PHP 8.2 or higher
 - PSR-3 interface (psr/log)
+- PSR-20 Clock interface (psr/clock)
+
+For testing, we recommend [samay](https://github.com/vaibhavpandeyvpz/samay) for frozen clocks:
+
+```bash
+composer require --dev vaibhavpandeyvpz/samay
+```
 
 ## License
 

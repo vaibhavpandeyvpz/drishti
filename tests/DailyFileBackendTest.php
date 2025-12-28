@@ -12,6 +12,7 @@
 namespace Drishti;
 
 use PHPUnit\Framework\TestCase;
+use Samay\FrozenClock;
 
 /**
  * Test suite for DailyFileBackend class.
@@ -45,11 +46,14 @@ final class DailyFileBackendTest extends TestCase
     public function test_file_name_includes_date(): void
     {
         $basePath = \sys_get_temp_dir().'/drishti_test_'.\uniqid();
-        $backend = new DailyFileBackend($basePath);
+
+        // Use frozen clock for predictable date
+        $clock = new FrozenClock(new \DateTimeImmutable('2024-01-15 12:00:00'));
+        $backend = new DailyFileBackend($basePath, null, $clock);
 
         $backend->write('info', 'Test message', []);
 
-        $expectedFile = $basePath.'-'.\date('Y-m-d').'.log';
+        $expectedFile = $basePath.'-2024-01-15.log';
         $this->assertFileExists($expectedFile);
 
         \unlink($expectedFile);

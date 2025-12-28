@@ -11,6 +11,8 @@
 
 namespace Drishti;
 
+use Psr\Clock\ClockInterface;
+
 /**
  * Simple log entry formatter implementation.
  *
@@ -21,6 +23,27 @@ namespace Drishti;
  */
 final readonly class SimpleLogEntryFormatter implements LogEntryFormatterInterface
 {
+    /**
+     * The clock instance for generating timestamps.
+     */
+    private readonly ClockInterface $clock;
+
+    /**
+     * Creates a new simple log entry formatter.
+     *
+     * @param  ClockInterface|null  $clock  Optional clock instance (defaults to system clock)
+     */
+    public function __construct(?ClockInterface $clock = null)
+    {
+        $this->clock = $clock ?? new class implements ClockInterface
+        {
+            public function now(): \DateTimeImmutable
+            {
+                return new \DateTimeImmutable;
+            }
+        };
+    }
+
     /**
      * Formats a log entry into a string.
      *
@@ -48,7 +71,7 @@ final readonly class SimpleLogEntryFormatter implements LogEntryFormatterInterfa
             );
         }
 
-        $timestamp = \date('Y-m-d H:i:s');
+        $timestamp = $this->clock->now()->format('Y-m-d H:i:s');
 
         return \sprintf('[%s] %s: %s%s', $timestamp, \strtoupper($level), $interpolatedMessage, \PHP_EOL);
     }
